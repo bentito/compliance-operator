@@ -1,15 +1,9 @@
-packag
-	// DelveRemote is a scan that checks for the cryptographic libraries loaded by a binary using Delve debugger
-	DelveRemoteScanType ScanType = "DelveRemote"
-e compliancescan
+package compliancescan
 
 import (
 	"context"
 	goerrors "errors"
 	"fmt"
-	"strings"
-	"time"
-
 	compv1alpha1 "github.com/ComplianceAsCode/compliance-operator/pkg/apis/compliance/v1alpha1"
 	"github.com/ComplianceAsCode/compliance-operator/pkg/controller/common"
 	"github.com/ComplianceAsCode/compliance-operator/pkg/utils"
@@ -19,6 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"strings"
+	"time"
 )
 
 type scanTypeHandler interface {
@@ -458,17 +454,17 @@ func (ph *platformScanTypeHandler) cleanup() error {
 const DelveRemoteScanType = "DelveRemote"
 
 type delveRemoteScanTypeHandler struct {
-    // properties specific to delve-remote
+	// properties specific to delve-remote
 }
 
 func (h *delveRemoteScanTypeHandler) validate() error {
-    // Validate the delve-remote scan configuration
-    return nil  // Placeholder implementation
+	// Validate the delve-remote scan configuration
+	return nil // Placeholder implementation
 }
 
 func (h *delveRemoteScanTypeHandler) getScan() *compv1alpha1.ComplianceScanSpec {
-    // Return details or configuration of the delve-remote scan
-    return &compv1alpha1.ComplianceScanSpec{
-        // Placeholder values
-    }
+	// Return details or configuration of the delve-remote scan
+	return &compv1alpha1.ComplianceScanSpec{
+		// Placeholder values
+	}
 }
