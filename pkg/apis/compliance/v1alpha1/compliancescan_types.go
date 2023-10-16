@@ -121,6 +121,9 @@ func resultCompare(lowResult ComplianceScanStatusResult, scanResult ComplianceSc
 // tailoring file. It assumes a key called `tailoring.xml` which will
 // have the tailoring contents.
 type TailoringConfigMapRef struct {
+	// DelveRemoteConfigMap specifies the name of the ConfigMap to be used for the delve-remote scan
+	DelveRemoteConfigMap string `json:"delveRemoteConfigMap,omitempty"`
+
 	// Name of the ConfigMap being referenced
 	Name string `json:"name"`
 }
@@ -132,6 +135,9 @@ type ComplianceScanType string
 // When changing the defaults, remember to change also the DefaultRawStorageSize and
 // DefaultStorageRotation constants
 type RawResultStorageSettings struct {
+	// DelveRemoteConfigMap specifies the name of the ConfigMap to be used for the delve-remote scan
+	DelveRemoteConfigMap string `json:"delveRemoteConfigMap,omitempty"`
+
 	// Specifies the amount of storage to ask for storing the raw results. Note that
 	// if re-scans happen, the new results will also need to be stored. Defaults to 1Gi.
 	// +kubebuilder:validation:Default=1Gi
@@ -165,6 +171,9 @@ type RawResultStorageSettings struct {
 
 // ComplianceScanSettings groups together settings of a ComplianceScan
 type ComplianceScanSettings struct {
+	// DelveRemoteConfigMap specifies the name of the ConfigMap to be used for the delve-remote scan
+	DelveRemoteConfigMap string `json:"delveRemoteConfigMap,omitempty"`
+
 	// Enable debug logging of workloads and OpenSCAP
 	Debug bool `json:"debug,omitempty"`
 	// Specifies settings that pertain to raw result storage.
@@ -227,6 +236,9 @@ type ComplianceScanSettings struct {
 
 // ComplianceScanSpec defines the desired state of ComplianceScan
 type ComplianceScanSpec struct {
+	// DelveRemoteConfigMap specifies the name of the ConfigMap to be used for the delve-remote scan
+	DelveRemoteConfigMap string `json:"delveRemoteConfigMap,omitempty"`
+
 	// The type of Compliance scan.
 	// +kubebuilder:default=Node
 	ScanType ComplianceScanType `json:"scanType,omitempty"`
@@ -259,6 +271,9 @@ type ComplianceScanSpec struct {
 
 // ComplianceScanStatus defines the observed state of ComplianceScan
 type ComplianceScanStatus struct {
+	// DelveRemoteConfigMap specifies the name of the ConfigMap to be used for the delve-remote scan
+	DelveRemoteConfigMap string `json:"delveRemoteConfigMap,omitempty"`
+
 	// Is the phase where the scan is at. Normally, one must wait for the scan
 	// to reach the phase DONE.
 	Phase ComplianceScanStatusPhase `json:"phase,omitempty"`
@@ -290,6 +305,9 @@ type ComplianceScanStatus struct {
 
 // StorageReference stores a reference to where certain objects are being stored
 type StorageReference struct {
+	// DelveRemoteConfigMap specifies the name of the ConfigMap to be used for the delve-remote scan
+	DelveRemoteConfigMap string `json:"delveRemoteConfigMap,omitempty"`
+
 	// Kind of the referent.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	// +optional
@@ -317,6 +335,9 @@ type StorageReference struct {
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Result",type="string",JSONPath=`.status.result`
 type ComplianceScan struct {
+	// DelveRemoteConfigMap specifies the name of the ConfigMap to be used for the delve-remote scan
+	DelveRemoteConfigMap string `json:"delveRemoteConfigMap,omitempty"`
+
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
@@ -398,6 +419,9 @@ func (cs *ComplianceScan) IsStrictNodeScan() bool {
 
 // ComplianceScanList contains a list of ComplianceScan
 type ComplianceScanList struct {
+	// DelveRemoteConfigMap specifies the name of the ConfigMap to be used for the delve-remote scan
+	DelveRemoteConfigMap string `json:"delveRemoteConfigMap,omitempty"`
+
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ComplianceScan `json:"items"`

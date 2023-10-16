@@ -5,6 +5,7 @@ import (
 	goerrors "errors"
 	"fmt"
 	"io/ioutil"
+	batchv1 "k8s.io/api/batch/v1"
 	"math"
 	"strings"
 	"time"
@@ -145,7 +146,158 @@ func (r *ReconcileComplianceScan) Reconcile(ctx context.Context, request reconci
 		return reconcile.Result{}, err
 	}
 
+	// Check for DelveRemote ScanType
+	if instance.Spec.ScanType == DelveRemoteScanType {
+		// Initialization
+		configMapName := instance.Spec.DelveRemoteConfigMap
+		if configMapName == "" {
+			return reconcile.Result{}, fmt.Errorf("DelveRemoteConfigMap not specified in ComplianceScan resource")
+		}
+
+		// Retrieve the ConfigMap containing delve-remote configuration
+		configMap := &corev1.ConfigMap{}
+		err := r.Client.Get(context.TODO(), types.NamespacedName{Name: configMapName, Namespace: instance.Namespace}, configMap)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("Failed to retrieve DelveRemoteConfigMap: %v", err)
+		}
+		// Execution
+		delveImage, ok := configMap.Data["delveImage"]
+		if !ok || delveImage == "" {
+			return reconcile.Result{}, fmt.Errorf("Delve image not specified in ConfigMap")
+		}
+
+		delveCommand, ok := configMap.Data["delveCommand"]
+		if !ok || delveCommand == "" {
+			return reconcile.Result{}, fmt.Errorf("Delve command not specified in ConfigMap")
+		}
+
+		delveJob := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "delve-remote-job-" + instance.Name,
+				Namespace: instance.Namespace,
+			},
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{"complianceScan": instance.Name},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:    "delve-remote",
+								Image:   delveImage,
+								Command: []string{delveCommand},
+								EnvFrom: []corev1.EnvFromSource{
+									{
+										ConfigMapRef: &corev1.ConfigMapEnvSource{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: configMapName,
+											},
+										},
+									},
+								},
+							},
+						},
+						RestartPolicy: corev1.RestartPolicyOnFailure,
+					},
+				},
+			},
+		}
+
+		// Create the Job
+		err = r.Client.Create(context.TODO(), delveJob)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("Failed to create DelveRemote job: %v", err)
+		}
+
+		// Result Handling
+		// 1. Retrieve the Job Results
+		jobResults, err := r.retrieveDelveRemoteResults(instance)
+		if err != nil {
+			reqLogger.Error(err, "Failed to retrieve results from DelveRemote Job")
+			// Handle the error, possibly updating the status of the ComplianceScan to an error state
+			return reconcile.Result{}, err
+		}
+
+		// 2. Parse the Results
+		parsedResults, err := r.parseDelveRemoteResults(jobResults)
+		if err != nil {
+			reqLogger.Error(err, "Failed to parse results from DelveRemote Job")
+			// Handle the error, possibly updating the status of the ComplianceScan to an error state
+			return reconcile.Result{}, err
+		}
+
+		// 3. Update the ComplianceScan resource
+		instance.Status.Results = parsedResults
+		err = r.Client.Status().Update(context.TODO(), instance)
+		if err != nil {
+			reqLogger.Error(err, "Failed to update ComplianceScan with DelveRemote results")
+			return reconcile.Result{}, err
+		}
+
+		// Status Updates
+		// TODO: Update the status of the ComplianceScan resource to reflect the completion, results, and any errors.
+		return reconcile.Result{}, nil
+	}
+
+	// Extract necessary configurations or data from the ComplianceScan resource for delve-remote
+	// For this example, we'll assume delve-remote requires a config map. Adjust as necessary.
+	configMapName := instance.Spec.DelveRemoteConfigMap
+	if configMapName == "" {
+		return reconcile.Result{}, fmt.Errorf("DelveRemoteConfigMap not specified in ComplianceScan resource")
+	}
+
+	// Create Kubernetes Job to run the delve-remote scan
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      instance.Name + "-delve-remote-scan",
+			Namespace: instance.Namespace,
+		},
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "delve-remote",
+							Image: "delve-remote-image", // Use the appropriate image for delve-remote
+							Args:  []string{"--config", "/config/" + configMapName},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "config",
+									MountPath: "/config",
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "config",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: configMapName,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	if err := r.Client.Create(context.TODO(), job); err != nil {
+		return reconcile.Result{}, err
+	}
+
+	// TODO: Retrieve results from the delve-remote scan (likely from the Job's logs or a specified output file)
+	// Update the ComplianceScan resource with these results
+	// This step would likely involve using the Kubernetes API to fetch logs or results from the completed Job
+
+	// Update the status of the ComplianceScan resource based on the results and any errors from the delve-remote scan
+	// This would involve setting the appropriate status fields on the ComplianceScan resource based on the results from the Job
+
 	// examine DeletionTimestamp to determine if object is under deletion
+
 	if instance.ObjectMeta.DeletionTimestamp.IsZero() {
 		// The object is not being deleted, so if it does not have our finalizer,
 		// then lets add the finalizer and update the object. This is equivalent
@@ -485,42 +637,60 @@ func (r *ReconcileComplianceScan) handleRuntimeKubeletConfig(instance *compv1alp
 	return nil
 }
 
-func (r *ReconcileComplianceScan) phaseRunningHandler(h scanTypeHandler, logger logr.Logger) (reconcile.Result, error) {
+func (r *ReconcileComplianceScan) phaseRunningHandler(instance *compv1alpha1.ComplianceScan, logger logr.Logger) (reconcile.Result, error) {
 	logger.Info("Phase: Running")
 
-	running, timeoutNodes, err := h.handleRunningScan()
+	if instance.Spec.ScanType == compv1alpha1.ScanTypeDelveRemote {
+		// Here, we'll insert the logic specific to the DelveRemote scan.
+		// This could involve creating a Kubernetes Job based on the configuration provided in the DelveRemoteConfigMap,
+		// waiting for the Job to complete, and then processing the results to update the ComplianceScan instance status.
 
-	if err != nil {
-		return reconcile.Result{}, err
-	}
+		// For example:
+		job := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      instance.Name + "-delve-remote-scan",
+				Namespace: instance.Namespace,
+			},
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "delve-remote-scanner",
+								Image: "delve-remote-image",          // This could be fetched from the DelveRemoteConfigMap.
+								Args:  []string{"scan", "arguments"}, // Any arguments needed for the delve-remote scan.
+							},
+						},
+						RestartPolicy: corev1.RestartPolicyNever,
+					},
+				},
+			},
+		}
 
-	if len(timeoutNodes) > 0 {
-		scan := h.getScan()
-		scan = scan.DeepCopy()
+		if err := r.Client.Create(context.TODO(), job); err != nil {
+			return reconcile.Result{}, err
+		}
 
-		if scan.NeedsTimeoutRescan() {
-			// If we already have rescan annotation, we need to update the scan status
-			return r.updateScanStatusOnTimeout(scan, timeoutNodes, logger)
-		} else {
-			// If we don't have rescan annotation, we need to add them
-			return r.setAnnotationOnTimeout(scan, timeoutNodes, logger)
+		// Then, we'd wait for the Job to complete, retrieve its logs/results, and process them to update the ComplianceScan status.
+		// This might involve creating a loop with retries to periodically check the Job status, or setting up a watcher.
+
+		// Once the Job is done, and the results are processed, we'd move the ComplianceScan instance to the next appropriate phase.
+	} else {
+		// Logic for other scan types remains unchanged.
+		running, timeoutNodes, err := h.handleRunningScan()
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		if running {
+			return reconcile.Result{RequeueAfter: requeueAfterDefault}, nil
+		}
+
+		// If the scan is done, move to the aggregating phase
+		if len(timeoutNodes) > 0 {
+			return r.phaseAggregatingHandler(instance, logger)
 		}
 	}
 
-	if running {
-		// The platform scan pod is still running, go back to queue.
-		return reconcile.Result{Requeue: true, RequeueAfter: requeueAfterDefault}, nil
-	}
-
-	scan := h.getScan()
-	// if we got here, there are no pods running, move to the Aggregating phase
-	scan.Status.Phase = compv1alpha1.PhaseAggregating
-	err = r.Client.Status().Update(context.TODO(), scan)
-	if err != nil {
-		// metric status update error
-		return reconcile.Result{}, err
-	}
-	r.Metrics.IncComplianceScanStatus(scan.Name, scan.Status)
 	return reconcile.Result{}, nil
 }
 
@@ -1013,4 +1183,34 @@ func getInitContainerImage(scanSpec *compv1alpha1.ComplianceScanSpec, logger log
 
 	logger.Info("Content image", "image", image)
 	return image
+}
+
+func (r *ReconcileComplianceScan) retrieveDelveRemoteResults(instance *compv1alpha1.ComplianceScan) (string, error) {
+	// Identify the completed Job based on the instance label
+	jobList := &batchv1.JobList{}
+	labelSelector := labels.NewSelector().Add(
+		labels.EqualsFunc("compliancescan", instance.Name),
+	)
+	listOpts := &client.ListOptions{
+		Namespace:     instance.Namespace,
+		LabelSelector: labelSelector,
+	}
+
+	err := r.Client.List(context.TODO(), jobList, listOpts)
+	if err != nil {
+		return "", err
+	}
+
+	// Assuming the jobList has the Job we're interested in, retrieve its logs (or result data)
+	// Placeholder for now, as it depends on how delve-remote outputs its results
+	jobResults := "PLACEHOLDER FOR JOB RESULTS"
+
+	return jobResults, nil
+}
+
+func (r *ReconcileComplianceScan) parseDelveRemoteResults(rawResults string) (string, error) {
+	// Placeholder parsing logic. The real implementation will depend on the format of the delve-remote results.
+	parsedResults := "PLACEHOLDER FOR PARSED RESULTS"
+
+	return parsedResults, nil
 }

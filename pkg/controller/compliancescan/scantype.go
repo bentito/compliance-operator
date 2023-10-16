@@ -1,4 +1,7 @@
-package compliancescan
+packag
+	// DelveRemote is a scan that checks for the cryptographic libraries loaded by a binary using Delve debugger
+	DelveRemoteScanType ScanType = "DelveRemote"
+e compliancescan
 
 import (
 	"context"
@@ -449,4 +452,23 @@ func (ph *platformScanTypeHandler) cleanup() error {
 		return err
 	}
 	return nil
+}
+
+// New scan type for DelveRemote
+const DelveRemoteScanType = "DelveRemote"
+
+type delveRemoteScanTypeHandler struct {
+    // properties specific to delve-remote
+}
+
+func (h *delveRemoteScanTypeHandler) validate() error {
+    // Validate the delve-remote scan configuration
+    return nil  // Placeholder implementation
+}
+
+func (h *delveRemoteScanTypeHandler) getScan() *compv1alpha1.ComplianceScanSpec {
+    // Return details or configuration of the delve-remote scan
+    return &compv1alpha1.ComplianceScanSpec{
+        // Placeholder values
+    }
 }
